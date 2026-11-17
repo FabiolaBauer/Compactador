@@ -1,7 +1,11 @@
 CC     = gcc
-CFLAGS = -Wall -Wextra -pthread
+CFLAGS = -Wall -Wextra -pthread -Iinclude
 LDLIBS = -lrt
 OBJS   = main.o stats.o dicionario.o fila.o compactador.o descompactador.o monitor.o
+
+# fontes em src/, headers em include/
+vpath %.c src
+vpath %.h include
 
 mz: $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDLIBS)
