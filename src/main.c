@@ -18,6 +18,7 @@
 #include "compactador.h"
 #include "descompactador.h"
 #include "monitor.h"
+#include "dicionario.h"
 
 int main(int argc, char **argv){
   if (argc != 4) { 
@@ -28,6 +29,9 @@ int main(int argc, char **argv){
     fprintf(stderr, "modo invalido '%s': use -c ou -d\n", argv[1]);
     return 1;
   }
+
+
+  dic_init();
 
   FILE *in  = fopen(argv[2], "rb");
   if (!in)  { perror(argv[2]); return 1; }

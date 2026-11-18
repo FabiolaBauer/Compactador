@@ -1,8 +1,8 @@
 #ifndef DICIONARIO_H
 #define DICIONARIO_H
 
-int word_to_sym(const char *w);
-
-const char *sym_to_word(int c);
+int dic_codifica(const char *w, unsigned char *out);
+const char *dic_decodifica(const unsigned char *p, int *usados);
+void dic_init(void);
 
 #endif

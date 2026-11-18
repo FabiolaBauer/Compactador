@@ -1,10 +1,23 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <unistd.h>
 #include <pthread.h>
 #include "compactador.h"
 #include "dicionario.h"
 #include "fila.h"
+#include "formato.h"
+
+/* Atraso opcional por bloco, em microssegundos, lido da variavel de ambiente
+ * MZ_ATRASO. Serve so para a demonstracao: deixa visivel que as 3 threads
+ * trabalham ao mesmo tempo e que o Monitor acompanha o andamento.
+ * Sem a variavel (ou com valor invalido/negativo), nao ha atraso. */
+static int atraso_us(void){
+  const char *s = getenv("MZ_ATRASO");
+  int v = s ? atoi(s) : 0;
+  return v > 0 ? v : 0;
+}
 
 /* threads compartilham. */
 typedef struct {
@@ -12,9 +25,14 @@ typedef struct {
   Queue q1; /* leitura -> compactacao */
   Queue q2; /* compactacao -> gravacao */
   Stats *st;
-  int erro_leitura;
-  int erro_grava;
+  int erro_leitura; /* escrito so pela thread de leitura */
+  int erro_grava;   /* escrito so pela thread de gravacao */
+  int atraso;       /* MZ_ATRASO; so lido pelas threads */
 } Ctx;
+
+static void espera(const Ctx *c){
+  if (c->atraso) usleep(c->atraso);
+}
 
 static int read_block(FILE *f, char *buf){
   int n = fread(buf, 1, BLK - FOLGA, f);
@@ -34,9 +52,9 @@ static int read_block(FILE *f, char *buf){
 static void flush_word(char *w, int *wl, Block *out, int *o, long *lidas, long *comp, long *nao){
   w[*wl] = 0;
   (*lidas)++;
-  int sym = word_to_sym(w);
-  if (sym >= 0) {
-    out->data[(*o)++] = sym;
+  int sym = dic_codifica(w, (unsigned char *)out->data + *o);
+  if (sym > 0) {
+    *o += sym;
     (*comp)++;
   } else {
     memcpy(out->data + *o, w, *wl);
@@ -64,8 +82,8 @@ static void compress_block(const Block *in, Block *out, Stats *st){
       w[wl++] = c;
     } else {
       if (wl) flush_word(w, &wl, out, &o, &lidas, &comp, &nao);
-      if (sym_to_word(c))
-        fprintf(stderr, "aviso: o texto contem '%c', que e simbolo do dicionario\n", c);
+      if (c >= 0x80)// byte do texto cai na faixa dos codigos 
+        out->data[o++] = (char)ESCAPE;
       out->data[o++] = c;
     }
   }
@@ -88,6 +106,7 @@ static void *thr_leitura(void *arg){
     c->st->bytes_original += b.len;
     pthread_mutex_unlock(&c->st->lock);
     fprintf(stderr, "[leitura]    bloco %d\n", n++);
+    espera(c);
     q_push(&c->q1, &b);
   }
 
@@ -110,6 +129,7 @@ static void *thr_compacta(void *arg){
     if (in.len == 0){ out.len = 0; q_push(&c->q2, &out); break; }
     compress_block(&in, &out, c->st);
     fprintf(stderr, "[compacta]   bloco %d\n", n++);
+    espera(c);
     q_push(&c->q2, &out);
   }
   return NULL;
@@ -134,6 +154,7 @@ static void *thr_grava(void *arg){
     c->st->bytes_compactado += var;
     pthread_mutex_unlock(&c->st->lock);
     fprintf(stderr, "[grava]      bloco %d\n", n++);
+    espera(c);
   }
   if (!c->erro_grava && fflush(c->out) != 0){ 
     perror("fflush"); 
@@ -153,6 +174,7 @@ static void marca_fim(Stats *st){
 bool compactador_run(FILE *in, FILE *out, Stats *st){
   Ctx ctx = {0};
   ctx.in = in; ctx.out = out; ctx.st = st;
+  ctx.atraso = atraso_us(); /* lido uma vez, antes de criar as threads */
   q_init(&ctx.q1);
   q_init(&ctx.q2);
 
