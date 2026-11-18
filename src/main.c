@@ -10,6 +10,7 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include "common.h"
@@ -19,24 +20,45 @@
 #include "monitor.h"
 
 int main(int argc, char **argv){
-  if (argc != 4) { printf("uso: %s -c|-d entrada.txt saida.txt\n", argv[0]); return 1; }
+  if (argc != 4) { 
+    printf("uso: %s -c|-d entrada.txt saida.txt\n", argv[0]); return 1; 
+  }
+
+  if (strcmp(argv[1], "-c") != 0 && strcmp(argv[1], "-d") != 0) {
+    fprintf(stderr, "modo invalido '%s': use -c ou -d\n", argv[1]);
+    return 1;
+  }
 
   FILE *in  = fopen(argv[2], "rb");
   if (!in)  { perror(argv[2]); return 1; }
   FILE *out = fopen(argv[3], "wb");
-  if (!out) { perror(argv[3]); return 1; }
+  if (!out) { perror(argv[3]); fclose(in); return 1; }
 
-  if (argv[1][1] == 'c') {
+  int ok = 1;
+
+  if (strcmp(argv[1], "-c") == 0) {
     Stats *st = stats_create(); /* memoria compartilhada ANTES do fork */
 
     pid_t pid = fork();
-    if (pid < 0) { perror("fork"); return 1; }
+    if (pid < 0) {
+      perror("fork");
+      stats_destroy(st);
+      fclose(in);
+      fclose(out);
+      return 1;
+    }
     if (pid == 0) { /* FILHO: Monitor */
       monitor_loop(st);
-      exit(0);
+      fflush(stdout);
+      _exit(0); /* _exit: nao descarrega os FILE* herdados do pai */
     }
 
-    compactador_run(in, out, st); /* PAI: Compactador (3 threads) */
+    /* PAI: Compactador (3 threads). Mesmo com erro, segue para a limpeza:
+     * compactador_run sempre marca st->terminou, entao o Monitor termina. */
+    if (!compactador_run(in, out, st)) {
+      fprintf(stderr, "compactacao falhou\n");
+      ok = 0;
+    }
 
     waitpid(pid, NULL, 0); /* espera o Monitor imprimir o resumo */
     stats_destroy(st);
@@ -45,6 +67,9 @@ int main(int argc, char **argv){
   }
 
   fclose(in);
-  fclose(out);
-  return 0;
+  if (fclose(out) != 0) { /* fclose grava o que restou no buffer */
+    perror(argv[3]);
+    ok = 0;
+  }
+  return ok ? 0 : 1;
 }

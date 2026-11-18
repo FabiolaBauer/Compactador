@@ -12,11 +12,13 @@ typedef struct {
   Queue q1; /* leitura -> compactacao */
   Queue q2; /* compactacao -> gravacao */
   Stats *st;
+  int erro_leitura;
+  int erro_grava;
 } Ctx;
 
 static int read_block(FILE *f, char *buf){
   int n = fread(buf, 1, BLK - FOLGA, f);
-  if (n == 0) return 0;
+  if (n == 0) return ferror(f) ? -1 : 0;
   if (isalpha((unsigned char)buf[n-1])){
     int c;
     while (n < BLK && (c = fgetc(f)) != EOF){
@@ -24,6 +26,8 @@ static int read_block(FILE *f, char *buf){
       if (!isalpha(c)) break;
     }
   }
+
+  if(ferror(f)) return -1;
   return n;
 }
 
@@ -86,6 +90,12 @@ static void *thr_leitura(void *arg){
     fprintf(stderr, "[leitura]    bloco %d\n", n++);
     q_push(&c->q1, &b);
   }
+
+  if (b.len < 0) {
+    perror("leitura");
+    c->erro_leitura = 1;
+  }
+
   b.len = 0;
   q_push(&c->q1, &b);
   return NULL;
@@ -112,30 +122,71 @@ static void *thr_grava(void *arg){
   while (1){
     q_pop(&c->q2, &b);
     if (b.len == 0) break;
-    fwrite(b.data, 1, b.len, c->out);
+    if(c->erro_grava) continue;
+    
+    size_t var = fwrite(b.data, 1, b.len, c->out);
+    if( var != (size_t)b.len) {
+      perror("fwrite");
+      c->erro_grava = 1;
+    }
+
     pthread_mutex_lock(&c->st->lock);
-    c->st->bytes_compactado += b.len;
+    c->st->bytes_compactado += var;
     pthread_mutex_unlock(&c->st->lock);
     fprintf(stderr, "[grava]      bloco %d\n", n++);
   }
+  if (!c->erro_grava && fflush(c->out) != 0){ 
+    perror("fflush"); 
+    c->erro_grava = 1; 
+  }
+
   return NULL;
 }
 
-void compactador_run(FILE *in, FILE *out, Stats *st){
-  Ctx ctx;
+//Marca o fim para o monitor, mesmo que tenha ocorrido erro de leitura ou gravação.
+static void marca_fim(Stats *st){
+  pthread_mutex_lock(&st->lock);
+  st->terminou = 1;
+  pthread_mutex_unlock(&st->lock);
+}
+
+bool compactador_run(FILE *in, FILE *out, Stats *st){
+  Ctx ctx = {0};
   ctx.in = in; ctx.out = out; ctx.st = st;
   q_init(&ctx.q1);
   q_init(&ctx.q2);
 
   pthread_t t1, t2, t3;
-  pthread_create(&t1, NULL, thr_leitura,  &ctx);
-  pthread_create(&t2, NULL, thr_compacta, &ctx);
-  pthread_create(&t3, NULL, thr_grava,    &ctx);
+  Block fim; fim.len = 0;
+  int r;
+
+  if ((r = pthread_create(&t3, NULL, thr_grava, &ctx)) != 0){
+    fprintf(stderr, "pthread_create(grava): %s\n", strerror(r));
+    marca_fim(st); 
+    return false;
+  }
+
+  if ((r = pthread_create(&t2, NULL, thr_compacta, &ctx)) != 0){
+    fprintf(stderr, "pthread_create(compacta): %s\n", strerror(r));
+    q_push(&ctx.q2, &fim);
+    pthread_join(t3, NULL);
+    marca_fim(st); 
+    return false;
+  }
+
+  if ((r = pthread_create(&t1, NULL, thr_leitura, &ctx)) != 0){
+    fprintf(stderr, "pthread_create(leitura): %s\n", strerror(r));
+    q_push(&ctx.q1, &fim); 
+    pthread_join(t2, NULL);
+    pthread_join(t3, NULL);
+    marca_fim(st); 
+    return false;
+  }
+
   pthread_join(t1, NULL);
   pthread_join(t2, NULL);
   pthread_join(t3, NULL);
 
-  pthread_mutex_lock(&st->lock);
-  st->terminou = 1; /* avisa o Monitor */
-  pthread_mutex_unlock(&st->lock);
+  marca_fim(st);
+  return !ctx.erro_leitura && !ctx.erro_grava;
 }
