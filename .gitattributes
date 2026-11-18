@@ -1,0 +1,2 @@
+# scripts de shell sempre com fim de linha LF (com CRLF o sh do Linux falha)
+*.sh text eol=lf
