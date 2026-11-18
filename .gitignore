@@ -2,4 +2,5 @@ mz
 *.o
 *.mzp
 saida*.txt
-log*.txts
+log*.txt
+.vscode/
