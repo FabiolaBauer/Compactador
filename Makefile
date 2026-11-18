@@ -16,10 +16,10 @@ mz: $(OBJS)
 # dependencias dos headers
 main.o:          common.h stats.h compactador.h descompactador.h monitor.h
 stats.o:         common.h stats.h
-dicionario.o:    dicionario.h
+dicionario.o:    dicionario.h formato.h
 fila.o:          common.h fila.h
-compactador.o:   common.h compactador.h dicionario.h fila.h
-descompactador.o: descompactador.h dicionario.h
+compactador.o:   common.h compactador.h dicionario.h fila.h formato.h
+descompactador.o: descompactador.h dicionario.h formato.h
 monitor.o:       common.h monitor.h
 
 clean:
