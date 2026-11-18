@@ -7,9 +7,10 @@
 
 #include <stdio.h>
 #include "common.h"
+#include <stdbool.h>
 
 /* Compacta 'in' em 'out' usando 3 threads. Atualiza as estatisticas em 'st'
  * e marca st->terminou = 1 ao final. */
-void compactador_run(FILE *in, FILE *out, Stats *st);
+bool compactador_run(FILE *in, FILE *out, Stats *st);
 
 #endif
