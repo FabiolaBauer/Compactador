@@ -19,7 +19,7 @@ stats.o:         common.h stats.h
 dicionario.o:    dicionario.h formato.h
 fila.o:          common.h fila.h
 compactador.o:   common.h compactador.h dicionario.h fila.h formato.h
-descompactador.o: descompactador.h dicionario.h formato.h
+descompactador.o: common.h descompactador.h dicionario.h fila.h formato.h
 monitor.o:       common.h monitor.h
 
 clean:
