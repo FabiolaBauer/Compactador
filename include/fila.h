@@ -18,4 +18,6 @@ void q_init(Queue *q);
 void q_push(Queue *q, const Block *b); /* bloqueia se a fila esta cheia */
 void q_pop(Queue *q, Block *b); /* bloqueia se a fila esta vazia */
 
+void q_destroy(Queue *q);
+
 #endif

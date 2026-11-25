@@ -9,11 +9,13 @@ e divide o serviço entre **processos** e **threads**.
 | Parte | Situação |
 |---|---|
 | Compactador (3 threads + filas) | pronto e testado |
+| Descompactador (3 threads + filas) | pronto e testado |
 | Memória compartilhada (`Stats`) | pronta |
-| Tratamento de erros (compactador e `main`) | pronto |
+| Comunicação entre processos | implementada com memória compartilhada |
+| Sincronização das threads | implementada com mutexes e variáveis de condição |
+| Tratamento de erros | implementado e testado |
 | Dicionário ampliado (184 palavras) + escape | pronto e testado |
-| Monitor | **provisório** (só imprime contadores) |
-| Descompactador (3 threads + filas) + Monitor no modo `-d` | pronto e testado |
+| Monitor nos modos `-c` e `-d` | implementado |
 
 ## Estrutura dos arquivos
 
@@ -26,7 +28,7 @@ e divide o serviço entre **processos** e **threads**.
 | `include/fila.h`, `src/fila.c` | Fila circular limitada (produtor/consumidor) de blocos. |
 | `include/compactador.h`, `src/compactador.c` | Processo Compactador: leitura de bloco, compressão e as 3 threads. Função pública: `compactador_run()`. |
 | `include/descompactador.h`, `src/descompactador.c` | Processo Descompactador: leitura sem cortar código, descompactação e as 3 threads. Função pública: `descompactador_run()`. |
-| `include/monitor.h`, `src/monitor.c` | Função `monitor_loop()` (versão provisória). |
+||`include/monitor.h`, `src/monitor.c` | Função `monitor_loop()`, responsável por apresentar as estatísticas finais da compactação e descompactação. |
 | `src/main.c` | Lê os argumentos, abre os arquivos, cria o `Stats`, faz o `fork()` (Monitor no filho) e chama o Compactador ou o Descompactador no pai. |
 | `script.sh` | Gera a lista de palavras do dicionário a partir dos textos. |
 | `Makefile` | Compilação (`make`). |
@@ -126,7 +128,7 @@ ls -l entrada.txt c1.mzp         # tamanhos
 
 | Texto | Palavras lidas | Não encontradas | Original | Compactado | Compressão |
 |---|---|---|---|---|---|
-| `entrada.txt` | 315 | 0 | 1938 B | 755 B | 61,0% |
+| `entrada.txt` | 315 | 0 | 1921 B | 738 B | 61,6% |
 | `entrada2.txt` | 139 | 0 | 886 B | 303 B | 65,8% |
 
 Com o dicionário original de 39 palavras, os mesmos textos davam:
@@ -334,11 +336,3 @@ modos. Atenção:
 - O dicionário é fixo: palavras de outros textos que não estão na lista não são
   compactadas.
 
-## Pendências
-
-- [ ] Monitor definitivo (palavras lidas, compactadas, não encontradas,
-      tamanho original e compactado, percentual).
-- [x] Descompactador como processo próprio (3 threads), com o Monitor no modo `-d`.
-- [ ] Preparar a apresentação (até 20 minutos): papel de cada processo e
-      thread, como trocam informação, dificuldades e demonstração (incluindo a
-      comparação do dicionário antigo com o ampliado).

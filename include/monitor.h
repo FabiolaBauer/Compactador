@@ -3,9 +3,8 @@
 
 #include "common.h"
 
-/* Le periodicamente o Stats compartilhado e imprime o andamento.
- * Termina (e imprime o resumo) quando st->terminou == 1.
- * Versao provisoria. */
+/* Acompanha as estatisticas compartilhadas e apresenta
+ * o resumo final da compactacao ou descompactacao. */
 void monitor_loop(Stats *st);
 
 #endif
