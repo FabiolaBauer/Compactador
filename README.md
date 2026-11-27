@@ -4,17 +4,6 @@ Compactador/descompactador de texto em C (Linux), baseado no `mini_zip.c`
 fornecido. O programa troca palavras por códigos de 1 ou 2 bytes (dicionário)
 e divide o serviço entre **processos** e **threads**.
 
-## Estado atual
-
-| Parte | Situação |
-|---|---|
-| Compactador (3 threads + filas) | pronto e testado |
-| Memória compartilhada (`Stats`) | pronta |
-| Tratamento de erros (compactador e `main`) | pronto |
-| Dicionário ampliado (184 palavras) + escape | pronto e testado |
-| Monitor | **provisório** (só imprime contadores) |
-| Descompactador | **versão mínima sequencial**, sem processo próprio |
-
 ## Estrutura dos arquivos
 
 | Arquivo | Conteúdo |

@@ -57,7 +57,7 @@ int main(int argc, char **argv){
       _exit(0); /* _exit: nao descarrega os FILE* herdados do pai */
     }
 
-    /* PAI: Compactador (3 threads). Mesmo com erro, segue para a limpeza:
+    /* PAI: Compactador (3 threads). 
      * compactador_run sempre marca st->terminou, entao o Monitor termina. */
     if (!compactador_run(in, out, st)) {
       fprintf(stderr, "compactacao falhou\n");
