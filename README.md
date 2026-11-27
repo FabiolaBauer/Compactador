@@ -8,15 +8,15 @@ e divide o serviço entre **processos** e **threads**.
 
 | Arquivo | Conteúdo |
 |---|---|
-| `include/common.h` | `Block`, `Stats`, constantes (`BLK`, `BLK_SAIDA`, `FOLGA`, `QSIZE`, `SHM_NAME`). Compartilhado por todos os módulos. |
+| `include/common.h` | `Block`, `Stats` (com o significado de cada campo em `-c` e `-d`), constantes (`BLK`, `BLK_SAIDA`, `FOLGA`, `QSIZE`, `SHM_NAME`). Compartilhado por todos os módulos. |
 | `include/formato.h` | Formato do arquivo compactado: o que cada faixa de byte significa. Compactador e Descompactador precisam seguir o mesmo. |
 | `include/dicionario.h`, `src/dicionario.c` | Lista de palavras, `dic_init`, `dic_codifica` (busca binária) e `dic_decodifica`. |
 | `include/stats.h`, `src/stats.c` | Cria e remove o segmento de memória compartilhada com o `Stats`. |
 | `include/fila.h`, `src/fila.c` | Fila circular limitada (produtor/consumidor) de blocos. |
 | `include/compactador.h`, `src/compactador.c` | Processo Compactador: leitura de bloco, compressão e as 3 threads. Função pública: `compactador_run()`. |
-| `include/descompactador.h`, `src/descompactador.c` | Função `decompress()` (versão sequencial). |
-| `include/monitor.h`, `src/monitor.c` | Função `monitor_loop()` (versão provisória). |
-| `src/main.c` | Lê os argumentos, abre os arquivos, faz o `fork()` e chama os módulos. |
+| `include/descompactador.h`, `src/descompactador.c` | Processo Descompactador: leitura sem cortar código, descompactação e as 3 threads. Função pública: `descompactador_run()`. |
+||`include/monitor.h`, `src/monitor.c` | Função `monitor_loop()`, responsável por apresentar as estatísticas finais da compactação e descompactação. |
+| `src/main.c` | Lê os argumentos, abre os arquivos, cria o `Stats`, faz o `fork()` (Monitor no filho) e chama o Compactador ou o Descompactador no pai. |
 | `script.sh` | Gera a lista de palavras do dicionário a partir dos textos. |
 | `Makefile` | Compilação (`make`). |
 
@@ -35,7 +35,7 @@ Para recompilar do zero: `make clean && make`.
 
 ```bash
 ./mz -c <texto> <compactado>      # compactar   (Compactador + Monitor)
-./mz -d <compactado> <texto>      # descompactar
+./mz -d <compactado> <texto>      # descompactar (Descompactador + Monitor)
 ```
 
 Exemplo:
@@ -46,7 +46,7 @@ Exemplo:
 ```
 
 - O Monitor escreve no `stdout`. O log das threads (`[leitura]`,
-  `[compacta]`, `[grava]`) sai no `stderr`.
+  `[compacta]` ou `[descompacta]`, `[grava]`) sai no `stderr`.
 - Para ver só o Monitor: `./mz -c entrada.txt c1.mzp 2>/dev/null`
 - Para guardar o log das threads: `./mz -c entrada.txt c1.mzp 2> log_threads.txt`
 - Código de saída: `0` se deu tudo certo, `1` em caso de erro
@@ -67,6 +67,18 @@ um bloco é gravado, o seguinte já está sendo compactado e outro já está sen
 lido. Com 100 ms de atraso, o `entrada2.txt` (5 blocos × 3 etapas) levaria
 1,5 s se as etapas fossem em sequência, e leva cerca de 0,75 s.
 
+O Descompactador usa a mesma variável:
+
+```bash
+MZ_ATRASO=100000 ./mz -d c1.mzp saida1.txt
+```
+
+No `-d` a thread de gravação mostra mais blocos que a leitura: cada código vira
+uma palavra inteira, então um bloco lido (até 256 bytes) gera de 1 a 3 blocos de
+saída (até 512 bytes cada). Com 100 ms, o `c1.mzp` (3 blocos lidos, 3
+descompactados, 6 gravados = 12 etapas) levaria 1,2 s em sequência e leva cerca
+de 0,8 s.
+
 Sem a variável, não há atraso.
 
 ## Testar
@@ -77,16 +89,18 @@ Sem a variável, não há atraso.
 make clean && make
 
 ./mz -c entrada.txt c1.mzp 2>/dev/null
-./mz -d c1.mzp saida1.txt
+./mz -d c1.mzp saida1.txt 2>/dev/null
 diff entrada.txt saida1.txt && echo "entrada.txt: OK"
 
 ./mz -c entrada2.txt c2.mzp 2>/dev/null
-./mz -d c2.mzp saida2.txt
+./mz -d c2.mzp saida2.txt 2>/dev/null
 diff entrada2.txt saida2.txt && echo "entrada2.txt: OK"
 ```
 
 Está certo se aparecerem os dois `OK` sem nenhuma diferença listada pelo
-`diff`, e se o Monitor mostrar `nao=0` nos dois textos.
+`diff`, se o Monitor mostrar `nao=0` nos dois textos e se a última linha do
+Monitor for **igual** no `-c` e no `-d` (mesmas palavras, mesmos tamanhos, mesmo
+percentual).
 
 ### Mostrar os três conteúdos (pedido no enunciado)
 
@@ -101,7 +115,7 @@ ls -l entrada.txt c1.mzp         # tamanhos
 
 | Texto | Palavras lidas | Não encontradas | Original | Compactado | Compressão |
 |---|---|---|---|---|---|
-| `entrada.txt` | 315 | 0 | 1938 B | 755 B | 61,0% |
+| `entrada.txt` | 315 | 0 | 1921 B | 738 B | 61,6% |
 | `entrada2.txt` | 139 | 0 | 886 B | 303 B | 65,8% |
 
 Com o dicionário original de 39 palavras, os mesmos textos davam:
@@ -119,13 +133,23 @@ Com o dicionário original de 39 palavras, os mesmos textos davam:
 ./mz -c naoexiste.txt c.mzp;   echo "saida=$?"   # arquivo inexistente: saida=1
 ```
 
+Erros do Descompactador:
+
+```bash
+./mz -d c1.mzp /dev/full;        echo "saida=$?"   # disco cheio: saida=1
+printf 'abc \360\377 fim' > inv.mzp                 # 0xF0 0xFF: codigo que nao existe
+./mz -d inv.mzp x.txt;           echo "saida=$?"   # "codigo invalido", saida=1
+printf 'abc \360' > cortado.mzp                     # termina no meio de um codigo
+./mz -d cortado.mzp x.txt;       echo "saida=$?"   # "arquivo cortado", saida=1
+```
+
 ### Texto com acentos e símbolos
 
 Qualquer texto deve voltar idêntico, mesmo com palavras fora do dicionário:
 
 ```bash
 printf 'O programa não é ruim: custa R$ 10,00 - será? Sim! @#%%\n' > especial.txt
-./mz -c especial.txt ce.mzp 2>/dev/null && ./mz -d ce.mzp saida_e.txt
+./mz -c especial.txt ce.mzp 2>/dev/null && ./mz -d ce.mzp saida_e.txt 2>/dev/null
 cmp especial.txt saida_e.txt && echo "especial: OK"
 ```
 
@@ -138,9 +162,9 @@ main()
  ├─ dic_init()            monta o indice do dicionario (antes de tudo)
  ├─ stats_create()        cria a memoria compartilhada (antes do fork)
  ├─ fork() ─► processo Monitor        le Stats e imprime
- └─ processo Compactador (o pai)
-      ├─ thread leitura       ─► fila q1 ─►
-      ├─ thread compactação   ─► fila q2 ─►
+ └─ processo pai: Compactador (-c) ou Descompactador (-d)
+      ├─ thread leitura                      ─► fila q1 ─►
+      ├─ thread compactação/descompactação   ─► fila q2 ─►
       └─ thread gravação
 ```
 
@@ -149,6 +173,8 @@ main()
   (`shm_open` + `mmap`, segmento `SHM_NAME`), com a struct `Stats`.
 - O mutex do `Stats` usa `PTHREAD_PROCESS_SHARED`, senão não funciona entre
   processos.
+- O `main` grava `st->modo` (`'c'` ou `'d'`) antes do `fork`, para o Monitor
+  saber o que está acompanhando.
 - Quando as threads terminam, o pai marca `terminou = 1`, o Monitor imprime o
   resumo e sai, e o pai faz `waitpid` e remove o segmento (`shm_unlink`).
 
@@ -175,12 +201,43 @@ main()
 - **Dicionário:** `dic_init()` monta o índice de busca antes do `fork` e das
   threads. Depois disso ele só é lido, então não precisa de mutex.
 
+### Threads do Descompactador
+
+Mesma estrutura do Compactador (`Ctx`, duas filas, sentinela `len = 0`, threads
+criadas de trás para frente, `MZ_ATRASO`).
+
+| Thread | O que faz |
+|---|---|
+| Leitura | Lê o `.mzp` em blocos de até `BLK` bytes, sem cortar um código de 2 bytes no meio, e coloca em `q1`. Soma `bytes_compactado`. |
+| Descompactação | Tira de `q1`, troca cada código pela palavra do dicionário, tira o escape e copia o ASCII. Coloca em `q2`. Conta as palavras. |
+| Gravação | Tira de `q2` e grava o texto. Soma `bytes_original`. |
+
+- **Bloco de saída maior que o de entrada:** o código `0x80` (1 byte) vira
+  `e`, mas outro vira `compressao` (10 bytes). Por isso a descompactação não
+  supõe que o texto cabe em um bloco: a função `emite()` manda o bloco para
+  `q2` quando ele enche e começa outro. Como só essa thread produz em `q2`, a
+  ordem continua certa.
+- **Contagem igual à do Compactador:** palavra vinda de um código conta como
+  compactada; uma sequência de letras ASCII conta como palavra não encontrada.
+  A variável `em_palavra` passa de um bloco para o outro, para uma palavra fora
+  do dicionário cortada entre dois blocos não ser contada duas vezes.
+- **Arquivo inválido:** código que não existe no dicionário ou arquivo que
+  termina no meio de um código marcam `erro_formato`; a thread continua
+  passando a sentinela e `descompactador_run` retorna `false`.
+
 ### Corte de blocos
 
 Se um bloco terminasse no meio de uma palavra (`progr|ama`), o dicionário não
 reconheceria nenhum dos pedaços. Por isso a leitura lê `BLK - FOLGA` bytes e,
 se o último for uma letra, continua lendo até o próximo separador. `FOLGA` é o
 espaço reservado para completar a palavra (maior palavra esperada).
+
+No Descompactador o problema é outro: um bloco não pode terminar logo depois de
+um `0xEF` (escape) ou de um `0xF0`–`0xFF` (código de 2 bytes), porque o byte
+seguinte ficaria no outro bloco. A leitura lê `BLK - 1` bytes e `falta_byte()`
+percorre o bloco desde o início, pulando 1 ou 2 bytes por código (não dá para
+olhar só o último byte: um `0xF0` também pode ser o **segundo** byte de outro
+código). Se o último código ficou incompleto, lê mais 1 byte.
 
 ### Tratamento de erros
 
@@ -245,16 +302,16 @@ Os três módulos dependem de:
    se o Descompactador também usar threads.
 
 **Monitor**: basta reescrever `monitor.c` (função `monitor_loop(Stats *)`). Ele
-lê os contadores sob `st->lock` até `st->terminou == 1`.
+lê os contadores sob `st->lock` até `st->terminou == 1`. Já roda nos dois
+modos. Atenção:
 
-**Descompactador**: basta evoluir `descompactador.c`. Atenção:
-
-- no modo `-d` o `main.c` ainda não cria o Monitor nem usa processos separados;
-  o enunciado pede Descompactador + Monitor nesse modo;
-- é preciso combinar com o Monitor o que cada campo do `Stats` significa no
-  modo `-d`;
-- se ler em blocos, o bloco não pode terminar logo depois de um `0xEF` ou de um
-  byte `0xF0`–`0xFF`, porque falta o byte seguinte do código.
+- **campo novo no `Stats`:** `modo` (`'c'` ou `'d'`), no fim da struct, depois
+  de `terminou`. Serve para o Monitor mostrar "compactando" ou
+  "descompactando";
+- o significado de cada campo no `-c` e no `-d` está no comentário do `Stats`
+  em `common.h`. Foi escolhido para o mesmo texto dar os **mesmos números** nos
+  dois modos: `bytes_original` é sempre o texto e `bytes_compactado` é sempre o
+  `.mzp`, então a fórmula do percentual é a mesma.
 
 ## Limitações conhecidas
 
@@ -266,11 +323,3 @@ lê os contadores sob `st->lock` até `st->terminou == 1`.
 - O dicionário é fixo: palavras de outros textos que não estão na lista não são
   compactadas.
 
-## Pendências
-
-- [ ] Monitor definitivo (palavras lidas, compactadas, não encontradas,
-      tamanho original e compactado, percentual).
-- [ ] Descompactador como processo próprio, com o Monitor no modo `-d`.
-- [ ] Preparar a apresentação (até 20 minutos): papel de cada processo e
-      thread, como trocam informação, dificuldades e demonstração (incluindo a
-      comparação do dicionário antigo com o ampliado).

@@ -26,3 +26,9 @@ void q_pop(Queue *q, Block *b){
   pthread_cond_signal(&q->not_full);
   pthread_mutex_unlock(&q->m);
 }
+
+void q_destroy(Queue *q){
+    pthread_mutex_destroy(&q->m);
+    pthread_cond_destroy(&q->not_full);
+    pthread_cond_destroy(&q->not_empty);
+}

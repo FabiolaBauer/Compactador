@@ -185,6 +185,10 @@ bool compactador_run(FILE *in, FILE *out, Stats *st){
   if ((r = pthread_create(&t3, NULL, thr_grava, &ctx)) != 0){
     fprintf(stderr, "pthread_create(grava): %s\n", strerror(r));
     marca_fim(st); 
+
+    q_destroy(&ctx.q1);
+    q_destroy(&ctx.q2);
+
     return false;
   }
 
@@ -192,6 +196,10 @@ bool compactador_run(FILE *in, FILE *out, Stats *st){
     fprintf(stderr, "pthread_create(compacta): %s\n", strerror(r));
     q_push(&ctx.q2, &fim);
     pthread_join(t3, NULL);
+
+    q_destroy(&ctx.q1);
+    q_destroy(&ctx.q2);
+
     marca_fim(st); 
     return false;
   }
@@ -201,6 +209,10 @@ bool compactador_run(FILE *in, FILE *out, Stats *st){
     q_push(&ctx.q1, &fim); 
     pthread_join(t2, NULL);
     pthread_join(t3, NULL);
+
+    q_destroy(&ctx.q1);
+    q_destroy(&ctx.q2);
+
     marca_fim(st); 
     return false;
   }
@@ -208,6 +220,9 @@ bool compactador_run(FILE *in, FILE *out, Stats *st){
   pthread_join(t1, NULL);
   pthread_join(t2, NULL);
   pthread_join(t3, NULL);
+
+  q_destroy(&ctx.q1);
+  q_destroy(&ctx.q2);
 
   marca_fim(st);
   return !ctx.erro_leitura && !ctx.erro_grava;

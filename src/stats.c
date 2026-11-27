@@ -24,7 +24,9 @@ Stats *stats_create(void){
   return s;
 }
 
+
 void stats_destroy(Stats *s){
+  pthread_mutex_destroy(&s->lock);
   munmap(s, sizeof(Stats));
   shm_unlink(SHM_NAME);
 }

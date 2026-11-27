@@ -5,8 +5,8 @@
  *   ./mz -c entrada.txt compactado.mzp
  *   ./mz -d compactado.mzp saida.txt
  *
- * Regra: um simbolo do dicionario NAO pode aparecer no texto original,
- * senao o descompactador nao sabe se ele e simbolo ou pontuacao do texto.
+ * Nos dois modos: o processo pai faz o trabalho (Compactador ou
+ * Descompactador, com 3 threads) e o filho e o Monitor.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,7 +29,7 @@ int main(int argc, char **argv){
     fprintf(stderr, "modo invalido '%s': use -c ou -d\n", argv[1]);
     return 1;
   }
-
+  char modo = argv[1][1]; /* 'c' ou 'd' */
 
   dic_init();
 
@@ -40,35 +40,39 @@ int main(int argc, char **argv){
 
   int ok = 1;
 
-  if (strcmp(argv[1], "-c") == 0) {
-    Stats *st = stats_create(); /* memoria compartilhada ANTES do fork */
+  Stats *st = stats_create(); /* memoria compartilhada ANTES do fork */
+  st->modo = modo;
 
-    pid_t pid = fork();
-    if (pid < 0) {
-      perror("fork");
-      stats_destroy(st);
-      fclose(in);
-      fclose(out);
-      return 1;
-    }
-    if (pid == 0) { /* FILHO: Monitor */
-      monitor_loop(st);
-      fflush(stdout);
-      _exit(0); /* _exit: nao descarrega os FILE* herdados do pai */
-    }
+  pid_t pid = fork();
+  if (pid < 0) {
+    perror("fork");
+    stats_destroy(st);
+    fclose(in);
+    fclose(out);
+    return 1;
+  }
+  if (pid == 0) { /* FILHO: Monitor (nos dois modos) */
+    monitor_loop(st);
+    fflush(stdout);
+    _exit(0); /* _exit: nao descarrega os FILE* herdados do pai */
+  }
 
-    /* PAI: Compactador (3 threads). 
-     * compactador_run sempre marca st->terminou, entao o Monitor termina. */
+  /* PAI: Compactador ou Descompactador (3 threads cada). Mesmo com erro, segue
+   * para a limpeza: os dois sempre marcam st->terminou, entao o Monitor termina. */
+  if (modo == 'c') {
     if (!compactador_run(in, out, st)) {
       fprintf(stderr, "compactacao falhou\n");
       ok = 0;
     }
-
-    waitpid(pid, NULL, 0); /* espera o Monitor imprimir o resumo */
-    stats_destroy(st);
   } else {
-    decompress(in, out);
+    if (!descompactador_run(in, out, st)) {
+      fprintf(stderr, "descompactacao falhou\n");
+      ok = 0;
+    }
   }
+
+  waitpid(pid, NULL, 0); /* espera o Monitor imprimir o resumo */
+  stats_destroy(st);
 
   fclose(in);
   if (fclose(out) != 0) { /* fclose grava o que restou no buffer */

@@ -22,7 +22,16 @@ typedef struct {
   long bytes_original;
   long bytes_compactado;
   int  terminou; /* o processo de trabalho avisa o Monitor */
+  char modo;     /* 'c' = compactando, 'd' = descompactando (definido no main) */
 } Stats;
+
+/* Significado dos campos em cada modo (o Monitor le os mesmos campos):
+ *   palavras_lidas            -c: palavras do texto lido   -d: palavras do texto reconstruido
+ *   palavras_compactadas      -c: viraram codigo           -d: vieram de um codigo
+ *   palavras_nao_encontradas  -c: ficaram em ASCII         -d: estavam em ASCII
+ *   bytes_original            -c: bytes lidos do texto     -d: bytes gravados no texto
+ *   bytes_compactado          -c: bytes gravados no .mzp   -d: bytes lidos do .mzp
+ * Assim os numeros e o percentual saem iguais nos dois modos para o mesmo texto. */
 
 /* len == 0 marca o fim. */
 typedef struct {
